@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Patronato Zacualpan</title>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background: #f4f4f4;
+            border: 1cm solid blue;
+            padding: 5mm;
+            box-sizing: border-box;
+        }
+        body::before {
+            content: "";
+            display: block;
+            position: absolute;
+            top: 1cm;
+            left: 1cm;
+            right: 1cm;
+            bottom: 1cm;
+            border: 5mm solid orange;
+            pointer-events: none;
+            box-sizing: border-box;
+        }
+        .container {
+            max-width: 400px;
+            margin: auto;
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            position: relative;
+            z-index: 1;
+        }
+        input, button {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        canvas { max-width: 100%; }
+        .btn-regresar {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            width: 4cm;
+            height: 10mm;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+        .btn-ver-donadores {
+            background-color: green;
+            color: white;
+            border: none;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="container" id="login-container">
+        <h2>Inicio de Sesión</h2>
+        <input type="text" id="username" placeholder="Nombre de usuario">
+        <input type="password" id="password" placeholder="Contraseña">
+        <button onclick="login()">Ingresar</button>
+        <button onclick="recuperarContrasena()">¿Olvidaste tu contraseña?</button>
+    </div>
+
+    <div class="container" id="dashboard" style="display:none;">
+        <h2 id="bienvenida" style="font-weight: bold; font-size: 18px;"></h2>
+        <p>Saldo actual: <span id="saldo">$0</span></p>
+        <div id="admin-controls" style="display:none;">
+            <button onclick="agregarIngreso()">Agregar Ingreso</button>
+            <button onclick="registrarEgreso()">Registrar Egreso</button>
+            <button onclick="generarReporte()">Reporte de Ingresos y Egresos</button>
+        </div>
+        <div id="ver-donadores"></div>
+        <button id="btnRegresar" class="btn-regresar" style="display:none;" onclick="location.reload()">Regresar a Inicio</button>
+        <canvas id="balanceChart"></canvas>
+    </div>
+
+    <script>
+        let saldo = 0;
+        let folio = 1;
+        const admins = ["presidente", "tesorera", "secretario", "vocal1", "vocal2"];
+        let usuarioActivo = "";
+        const usuarios = {
+            "presidente": "admin123",
+            "tesorera": "admin456",
+            "secretario": "admin789",
+            "vocal1": "admin321",
+            "vocal2": "admin654"
+        };
+        const donadores = {};
+        const mensajesMotivadores = [
+            "¡Gracias por tu apoyo! Juntos hacemos la diferencia!",
+            "Tu generosidad equipa a nuestros héroes voluntarios!",
+            "Cada peso cuenta para la seguridad de nuestra comunidad!",
+            "Un pequeño aporte, un gran impacto en la protección civil!"
+        ];
+
+        function login() {
+            let username = document.getElementById('username').value.trim().toLowerCase();
+            let password = document.getElementById('password').value;
+            usuarioActivo = username;
+            
+            if (usuarios.hasOwnProperty(username) && usuarios[username] === password) {
+                document.getElementById('login-container').style.display = 'none';
+                document.getElementById('dashboard').style.display = 'block';
+
+                let rolMostrar = username === 'tesorera' ? 'Tesorera' : username.charAt(0).toUpperCase() + username.slice(1);
+                document.getElementById('bienvenida').innerText = `Bienvenido/a ${rolMostrar}`;
+
+                if (username === "tesorera" || username === "presidente") {
+                    document.getElementById('admin-controls').style.display = 'block';
+                    const verBtn = document.createElement("button");
+                    verBtn.className = "btn-ver-donadores";
+                    verBtn.innerText = "Ver Donadores";
+                    verBtn.onclick = generarListaDonadores;
+                    document.getElementById("ver-donadores").appendChild(verBtn);
+                } else {
+                    document.getElementById('btnRegresar').style.display = 'inline-block';
+                }
+            } else {
+                Swal.fire('Error', 'Usuario o contraseña incorrectos.', 'error');
+            }
+        }
+
+        function agregarIngreso() {
+            if (usuarioActivo !== "tesorera") {
+                Swal.fire('Acceso denegado', 'Solo la Tesorera puede agregar ingresos.', 'error');
+                return;
+            }
+            let nombre = prompt("Ingrese el nombre del donador:");
+            if (!nombre) return;
+
+            if (!donadores[nombre]) {
+                let telefono = prompt("Ingrese el número de teléfono:");
+                let poblacion = prompt("Ingrese la población:");
+                let montoMensual = parseFloat(prompt("¿Cuánto donará por mes?"));
+                if (isNaN(montoMensual) || montoMensual <= 0) return;
+                donadores[nombre] = { telefono, poblacion, saldo: 0, montoMensual };
+            }
+
+            let monto = parseFloat(prompt("Ingrese el monto del ingreso:"));
+            if (!isNaN(monto) && monto > 0) {
+                donadores[nombre].saldo += monto;
+                saldo += monto;
+                actualizarSaldo();
+                generarRecibo(nombre, monto);
+            }
+        }
+
+        function registrarEgreso() {
+            if (usuarioActivo !== "tesorera") {
+                Swal.fire('Acceso denegado', 'Solo la Tesorera puede registrar egresos.', 'error');
+                return;
+            }
+
+            let monto = parseFloat(prompt("Ingrese el monto del egreso:"));
+            if (!isNaN(monto) && monto > 0) {
+                let motivo = prompt("Motivo del pago:");
+                if (!motivo) return;
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = '.jpg,.jpeg,.png,.pdf';
+                input.onchange = () => {
+                    const archivo = input.files[0];
+                    if (archivo) {
+                        saldo -= monto;
+                        actualizarSaldo();
+                        Swal.fire('Egreso registrado', `Monto: $${monto}\nMotivo: ${motivo}`, 'success');
+                    }
+                };
+                input.click();
+            }
+        }
+
+        function actualizarSaldo() {
+            document.getElementById('saldo').innerText = `$${saldo}`;
+        }
+
+        function generarRecibo(nombre, monto) {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+
+            doc.setDrawColor(0, 51, 153);
+            doc.setLineWidth(1);
+            doc.rect(5, 5, 200, 90);
+            doc.setDrawColor(255, 165, 0);
+            doc.rect(7, 7, 196, 86);
+
+            doc.setTextColor(0, 0, 0);
+            doc.setFontSize(16);
+            doc.text("RECIBO DE DONACIÓN", 70, 20);
+            doc.setFontSize(12);
+            doc.text(`Folio: ${folio.toString().padStart(3, '0')}`, 150, 30);
+            doc.text(`Fecha: ${new Date().toLocaleDateString()}`, 10, 40);
+            doc.text(`Recibí de: ${nombre}`, 10, 50);
+            doc.text(`Cantidad: $${monto}`, 10, 60);
+            doc.text("Forma de pago: Efectivo", 10, 70);
+            doc.text("Recibido por: Patronato Zacualpan", 10, 80);
+
+            let mensaje = mensajesMotivadores[Math.floor(Math.random() * mensajesMotivadores.length)];
+            doc.setFont("helvetica", "bolditalic");
+            doc.setFontSize(13);
+            doc.text(mensaje, 105, 95, { maxWidth: 180, align: "center" });
+
+            folio++;
+            doc.save(`Recibo_${nombre}.pdf`);
+        }
+
+        function generarListaDonadores() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+
+            doc.setFontSize(14);
+            doc.text("Listado de Donadores", 70, 20);
+            doc.setFontSize(10);
+            doc.text(`Fecha de generación: ${new Date().toLocaleDateString()}`, 10, 30);
+
+            let y = 40;
+            for (let nombre in donadores) {
+                let d = donadores[nombre];
+                doc.text(`${nombre} - Tel: ${d.telefono} - Población: ${d.poblacion} - Saldo: $${d.saldo}`, 10, y);
+                y += 10;
+            }
+
+            doc.save("Listado_Donadores.pdf");
+        }
+
+        function generarReporte() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            doc.setFontSize(14);
+            doc.text("Reporte de Ingresos y Egresos", 60, 20);
+            doc.setFontSize(10);
+            doc.text(`Fecha de generación: ${new Date().toLocaleDateString()}`, 10, 30);
+            doc.text(`Saldo actual: $${saldo}`, 10, 40);
+            doc.save("Reporte_General.pdf");
+        }
+    </script>
+</body>
+</html>
